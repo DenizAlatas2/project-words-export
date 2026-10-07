@@ -1,0 +1,8 @@
+{
+  "root": "sample-project",
+  "files": ["src/FlowEngine.py"],
+  "manifests": {
+    "package.json": ["name"],
+    "pyproject.toml": ["project.name"]
+  }
+}
