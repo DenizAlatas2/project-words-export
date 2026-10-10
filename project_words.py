@@ -284,10 +284,12 @@ def export(glossary_path: Path, cspell_path: Path, wispr_path: Path) -> None:
     glossary = json.loads(glossary_path.read_text(encoding="utf-8"))
     terms = approved_terms(glossary)
     validate_aliases(terms)
+    cspell = cspell_bytes(terms)
+    wispr = wispr_csv_bytes(terms)
     cspell_path.parent.mkdir(parents=True, exist_ok=True)
     wispr_path.parent.mkdir(parents=True, exist_ok=True)
-    cspell_path.write_bytes(cspell_bytes(terms))
-    wispr_path.write_bytes(wispr_csv_bytes(terms))
+    cspell_path.write_bytes(cspell)
+    wispr_path.write_bytes(wispr)
 
 
 def main(argv: list[str] | None = None) -> int:

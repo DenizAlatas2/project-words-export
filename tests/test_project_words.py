@@ -166,6 +166,60 @@ class ProjectWordsTests(unittest.TestCase):
         self.assertIs(source["active"], False)
         self.assertIn(b"Legacy\n", pw.cspell_bytes(pw.approved_terms(data)))
 
+    def test_invalid_wispr_word_preserves_existing_exports(self):
+        word = "x" * 61
+        self.glossary.write_text(json.dumps({
+            "schema_version": 1,
+            "terms": [{"word": word, "confirmed": True, "aliases": [],
+                       "sources": [{"path": "synthetic.py"}]}],
+            "candidates": [],
+        }), encoding="utf-8")
+        cspell = self.base / "existing" / "words.txt"
+        wispr = self.base / "existing" / "wispr.csv"
+        cspell.parent.mkdir()
+        cspell_before = b"CSpell-SENTINEL-before\n"
+        wispr_before = b"Wispr-SENTINEL-before\r\n"
+        cspell.write_bytes(cspell_before)
+        wispr.write_bytes(wispr_before)
+
+        with self.assertRaisesRegex(ValueError, "Wispr Flow dictionary word exceeds 60"):
+            pw.export(self.glossary, cspell, wispr)
+
+        self.assertEqual(cspell.read_bytes(), cspell_before)
+        self.assertEqual(wispr.read_bytes(), wispr_before)
+
+    def test_invalid_wispr_word_creates_no_output_directories(self):
+        word = "x" * 61
+        self.glossary.write_text(json.dumps({
+            "schema_version": 1,
+            "terms": [{"word": word, "confirmed": True, "aliases": [],
+                       "sources": [{"path": "synthetic.py"}]}],
+            "candidates": [],
+        }), encoding="utf-8")
+        cspell = self.base / "new-cspell" / "words.txt"
+        wispr = self.base / "new-wispr" / "wispr.csv"
+
+        with self.assertRaisesRegex(ValueError, "Wispr Flow dictionary word exceeds 60"):
+            pw.export(self.glossary, cspell, wispr)
+
+        self.assertFalse(cspell.parent.exists())
+        self.assertFalse(wispr.parent.exists())
+
+    def test_valid_export_writes_both_formats(self):
+        self.glossary.write_text(json.dumps({
+            "schema_version": 1,
+            "terms": [{"word": "Flow", "confirmed": True, "aliases": ["Flo"],
+                       "sources": [{"path": "synthetic.py"}]}],
+            "candidates": [],
+        }), encoding="utf-8")
+        cspell = self.base / "valid" / "words.txt"
+        wispr = self.base / "valid" / "wispr.csv"
+
+        pw.export(self.glossary, cspell, wispr)
+
+        self.assertEqual(cspell.read_bytes(), b"Flo\nFlow\n")
+        self.assertEqual(wispr.read_bytes(), b"Flow\r\nFlo,Flow\r\n")
+
     def test_synthetic_manifest_discovery_and_exports(self):
         pw.discover(self.config, self.glossary)
         data = json.loads(self.glossary.read_text(encoding="utf-8"))
