@@ -227,12 +227,21 @@ def approved_terms(glossary: dict[str, Any]) -> list[dict[str, Any]]:
     return terms
 
 
+def _validate_cspell_entry(value: str, context: str) -> None:
+    # CSpell treats these as dictionary syntax, not literal word characters.
+    if "#" in value:
+        raise ValueError(f"{context} {value!r} contains '#', which starts a CSpell comment")
+    if value.startswith("!"):
+        raise ValueError(f"{context} {value!r} starts with '!', which marks a CSpell word as forbidden")
+
+
 def validate_aliases(terms: list[dict[str, Any]]) -> None:
     owners: dict[str, str] = {}
     for term in terms:
         word = term["word"].strip()
         if not word or "\n" in word or "\r" in word or len(word) > 4000:
             raise ValueError(f"invalid confirmed word: {word!r}")
+        _validate_cspell_entry(word, "confirmed word")
         if any(ch.isspace() for ch in word):
             raise ValueError(f"confirmed word must be one token: {word!r}")
         if not isinstance(term.get("sources"), list) or not term["sources"]:
@@ -246,10 +255,12 @@ def validate_aliases(terms: list[dict[str, Any]]) -> None:
         owners[key] = word
     for term in terms:
         word = term["word"].strip()
-        for alias in term.get("aliases", []):
-            alias = alias.strip()
+        for raw_alias in term.get("aliases", []):
+            alias = raw_alias.strip()
             if not alias or len(alias) > 60:
                 raise ValueError(f"invalid alias for {word!r}; Wispr Flow allows up to 60 characters")
+            if not any(ch.isspace() for ch in raw_alias):
+                _validate_cspell_entry(raw_alias, f"single-token alias for {word!r}")
             key = norm(alias)
             if key in owners:
                 raise ValueError(f"alias {alias!r} conflicts with term {owners[key]!r}")

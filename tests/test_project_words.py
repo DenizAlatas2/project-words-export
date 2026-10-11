@@ -220,6 +220,129 @@ class ProjectWordsTests(unittest.TestCase):
         self.assertEqual(cspell.read_bytes(), b"Flo\nFlow\n")
         self.assertEqual(wispr.read_bytes(), b"Flow\r\nFlo,Flow\r\n")
 
+    def test_cspell_control_syntax_is_rejected_in_confirmed_words(self):
+        cases = [
+            ("C#", "starts a CSpell comment"),
+            ("#Fluxora", "starts a CSpell comment"),
+            ("!Fluxora", "marks a CSpell word as forbidden"),
+        ]
+        for index, (word, detail) in enumerate(cases):
+            with self.subTest(word=word):
+                self.glossary.write_text(json.dumps({
+                    "schema_version": 1,
+                    "terms": [{"word": word, "confirmed": True, "aliases": [],
+                               "sources": [{"path": "synthetic.py"}]}],
+                    "candidates": [],
+                }), encoding="utf-8")
+                out = self.base / f"word-{index}"
+                cspell = out / "words.txt"
+                wispr = out / "wispr.csv"
+                cspell.parent.mkdir()
+                cspell_before = b"CSpell-SENTINEL-before\n"
+                wispr_before = b"Wispr-SENTINEL-before\r\n"
+                cspell.write_bytes(cspell_before)
+                wispr.write_bytes(wispr_before)
+
+                with self.assertRaises(ValueError) as raised:
+                    pw.export(self.glossary, cspell, wispr)
+
+                self.assertIn(word, str(raised.exception))
+                self.assertIn(detail, str(raised.exception))
+                self.assertEqual(cspell.read_bytes(), cspell_before)
+                self.assertEqual(wispr.read_bytes(), wispr_before)
+
+    def test_cspell_control_syntax_is_rejected_in_single_token_aliases(self):
+        cases = [
+            ("C#Alias", "starts a CSpell comment"),
+            ("#Fluxora", "starts a CSpell comment"),
+            ("!Fluxora", "marks a CSpell word as forbidden"),
+        ]
+        for index, (alias, detail) in enumerate(cases):
+            with self.subTest(alias=alias):
+                self.glossary.write_text(json.dumps({
+                    "schema_version": 1,
+                    "terms": [{"word": "Flow", "confirmed": True, "aliases": [alias],
+                               "sources": [{"path": "synthetic.py"}]}],
+                    "candidates": [],
+                }), encoding="utf-8")
+                out = self.base / f"alias-{index}"
+                cspell = out / "words.txt"
+                wispr = out / "wispr.csv"
+                cspell.parent.mkdir()
+                cspell_before = b"CSpell-SENTINEL-before\n"
+                wispr_before = b"Wispr-SENTINEL-before\r\n"
+                cspell.write_bytes(cspell_before)
+                wispr.write_bytes(wispr_before)
+
+                with self.assertRaises(ValueError) as raised:
+                    pw.export(self.glossary, cspell, wispr)
+
+                self.assertIn(alias, str(raised.exception))
+                self.assertIn(detail, str(raised.exception))
+                self.assertEqual(cspell.read_bytes(), cspell_before)
+                self.assertEqual(wispr.read_bytes(), wispr_before)
+
+    def test_whitespace_padded_cspell_marker_alias_remains_wispr_only(self):
+        self.glossary.write_text(json.dumps({
+            "schema_version": 1,
+            "terms": [{"word": "Flow", "confirmed": True, "aliases": [" #Fluxora "],
+                       "sources": [{"path": "synthetic.py"}]}],
+            "candidates": [],
+        }), encoding="utf-8")
+        cspell = self.base / "padded-alias" / "words.txt"
+        wispr = self.base / "padded-alias" / "wispr.csv"
+
+        pw.export(self.glossary, cspell, wispr)
+
+        self.assertEqual(cspell.read_bytes(), b"Flow\n")
+        self.assertEqual(wispr.read_bytes(), b"Flow\r\n#Fluxora,Flow\r\n")
+
+    def test_phrase_alias_with_cspell_marker_remains_wispr_only(self):
+        self.glossary.write_text(json.dumps({
+            "schema_version": 1,
+            "terms": [{"word": "Flow", "confirmed": True, "aliases": ["C# sharp"],
+                       "sources": [{"path": "synthetic.py"}]}],
+            "candidates": [],
+        }), encoding="utf-8")
+        cspell = self.base / "phrase-alias" / "words.txt"
+        wispr = self.base / "phrase-alias" / "wispr.csv"
+
+        pw.export(self.glossary, cspell, wispr)
+
+        self.assertEqual(cspell.read_bytes(), b"Flow\n")
+        self.assertEqual(wispr.read_bytes(), b"Flow\r\nC# sharp,Flow\r\n")
+
+    def test_cspell_rejection_does_not_create_output_directories(self):
+        self.glossary.write_text(json.dumps({
+            "schema_version": 1,
+            "terms": [{"word": "C#", "confirmed": True, "aliases": [],
+                       "sources": [{"path": "synthetic.py"}]}],
+            "candidates": [],
+        }), encoding="utf-8")
+        cspell = self.base / "new-cspell" / "words.txt"
+        wispr = self.base / "new-wispr" / "wispr.csv"
+
+        with self.assertRaisesRegex(ValueError, "starts a CSpell comment"):
+            pw.export(self.glossary, cspell, wispr)
+
+        self.assertFalse(cspell.parent.exists())
+        self.assertFalse(wispr.parent.exists())
+
+    def test_normal_cspell_words_and_aliases_export_as_before(self):
+        self.glossary.write_text(json.dumps({
+            "schema_version": 1,
+            "terms": [{"word": "FlowEngine", "confirmed": True, "aliases": ["Flow"],
+                       "sources": [{"path": "synthetic.py"}]}],
+            "candidates": [],
+        }), encoding="utf-8")
+        cspell = self.base / "normal" / "words.txt"
+        wispr = self.base / "normal" / "wispr.csv"
+
+        pw.export(self.glossary, cspell, wispr)
+
+        self.assertEqual(cspell.read_bytes(), b"Flow\nFlowEngine\n")
+        self.assertEqual(wispr.read_bytes(), b"FlowEngine\r\nFlow,FlowEngine\r\n")
+
     def test_synthetic_manifest_discovery_and_exports(self):
         pw.discover(self.config, self.glossary)
         data = json.loads(self.glossary.read_text(encoding="utf-8"))
